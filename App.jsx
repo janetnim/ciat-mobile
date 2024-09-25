@@ -1,62 +1,42 @@
 import { StatusBar } from 'expo-status-bar';
-import { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, Alert, ImageBackground, Image } from 'react-native';
-import { Camera } from 'expo-camera';
-let camera: Camera;
+import { useState } from 'react';
+import { StyleSheet, Text, View, TouchableOpacity, Alert, ImageBackground } from 'react-native';
+import { CameraView } from 'expo-camera';
 
-export default function App() {
-  const [status, setStatus] = useState(null);
+let camera;
+
+const App = () => {
   const [startCamera, setStartCamera] = useState(false);
   const [previewVisible, setPreviewVisible] = useState(false);
   const [capturedImage, setCapturedImage] = useState(null);
   const [cameraType, setCameraType] = useState('back');
-  const [flashMode, setFlashMode] = useState('off');
 
-  useEffect(() => {
+  const handleStartCamera = async () => {
+    const { status } = await CameraView.requestCameraPermissionsAsync();
     if (status === 'granted') {
-      console.log('========', {startCamera});
       setStartCamera(true);
     } else {
       Alert.alert('Access denied');
     }
-  }, [status]);
-
-  const handleStartCamera = async () => {
-    const { status } = await Camera.requestCameraPermissionsAsync();
-    setStatus(status);
-    console.log(status)
-    // if (status === 'granted') {
-    //   console.log('========', {startCamera});
-    //   setStartCamera('true');
-    // } else {
-    //   Alert.alert('Access denied');
-    // }
   }
 
   const takePicture = async () => {
+    if (!camera) return;
+
     const photo = await camera.takePictureAsync();
-    console.log(photo);
-    setPreviewVisible(true);
-    //setStartCamera(false);
     setCapturedImage(photo);
+    setPreviewVisible(true);
   }
 
-  const savePhoto = () => {}
+  const savePhoto = () => {
+    // logic for calling url to return image predictions
+    setStartCamera(false);
+  }
 
   const retakePicture = () => {
     setCapturedImage(null);
     setPreviewVisible(false);
-    handleStartCamera();
-  };
-
-  const handleFlashMode = () => {
-    if (flashMode === 'on') {
-      setFlashMode('off');
-    } else if (flashMode === 'off') {
-      setFlashMode('on');
-    } else {
-      setFlashMode('auto');
-    }
+    // handleStartCamera();
   };
 
   const switchCamera = () => {
@@ -76,12 +56,12 @@ export default function App() {
             width: '100%'
           }}
         >
-          {previewVisible && capturedImage ? (
+          {(previewVisible && capturedImage) ? (
             <CameraPreview photo={capturedImage} savePhoto={savePhoto} retakePicture={retakePicture} />
           ) : (
-            <Camera
+            <CameraView
               type={cameraType}
-              flashMode={flashMode}
+              flashMode={"off"}
               style={{flex: 1}}
               ref={(r) => {
                 camera = r
@@ -104,23 +84,6 @@ export default function App() {
                     justifyContent: 'space-between'
                   }}
                 >
-                  <TouchableOpacity
-                    onPress={handleFlashMode}
-                    style={{
-                      backgroundColor: flashMode === 'off' ? '#000' : '#fff',
-                      borderRadius: '50%',
-                      height: 25,
-                      width: 25
-                    }}
-                  >
-                    <Text
-                      style={{
-                        fontSize: 20
-                      }}
-                    >
-                      ⚡️
-                    </Text>
-                  </TouchableOpacity>
                   <TouchableOpacity
                     onPress={switchCamera}
                     style={{
@@ -170,7 +133,7 @@ export default function App() {
                   </View>
                 </View>
               </View>
-            </Camera>
+            </CameraView>
           )}
         </View>
       ) : (
@@ -222,8 +185,6 @@ const styles = StyleSheet.create({
 });
 
 const CameraPreview = ({photo, retakePicture, savePhoto}) => {
-  console.log('sdsfds', photo);
-
   return (
     <View
       style={{
@@ -297,3 +258,5 @@ const CameraPreview = ({photo, retakePicture, savePhoto}) => {
     </View>
   );
 };
+
+export default App;
