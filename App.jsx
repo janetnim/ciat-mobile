@@ -1,19 +1,44 @@
 import { StatusBar } from 'expo-status-bar';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, Alert, ImageBackground } from 'react-native';
-import { CameraView } from 'expo-camera';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 
 let camera;
 
 const App = () => {
   const [startCamera, setStartCamera] = useState(false);
+  const [isLoadingPrediction, setIsLoadingPrediction] = useState(false);
+  const [imagePredictionURL, setimagePredictionURL] = useState(null);
   const [previewVisible, setPreviewVisible] = useState(false);
   const [capturedImage, setCapturedImage] = useState(null);
   const [cameraType, setCameraType] = useState('back');
+  const [permission, requestPermission] = useCameraPermissions();
+
+  useEffect(() => {
+    if(isLoadingPrediction) {
+      const formData = new FormData();
+      formData.append('files', capturedImage?.uri, capturedImage?.uri);
+      fetch('http://127.0.0.1:8080/v1/batch-process', {
+        method: 'POST',
+        headers: {
+          "Authorization": `Bearer ${localStorage.getItem("token")}`
+        },
+        body: formData
+        // body: JSON.stringify(formData)
+      })
+      .then(response => {
+        loadImagePredition(response.blob());
+      })
+      .catch(error => {
+        Alert.alert('An error occured while trying to fetch image prediction');
+      });
+    }
+  }, [isLoadingPrediction])
 
   const handleStartCamera = async () => {
-    const { status } = await CameraView.requestCameraPermissionsAsync();
-    if (status === 'granted') {
+    setimagePredictionURL(null);
+    await requestPermission();
+    if (permission?.granted) {
       setStartCamera(true);
     } else {
       Alert.alert('Access denied');
@@ -28,23 +53,32 @@ const App = () => {
     setPreviewVisible(true);
   }
 
-  const savePhoto = () => {
-    // logic for calling url to return image predictions
-    setStartCamera(false);
+  const startPrediction = () => {
+    setIsLoadingPrediction(true);
+    setPreviewVisible(false);
+  }
+
+  const loadImagePredition = async (data) => {
+    const jszip = new JSZip();
+    await jszip.loadAsync(data).then(({files}) => {
+      const imageFiles = Object.entries(files);
+      imageFiles.forEach(([, image]) => {
+        image.async('blob').then(blob => {
+          setimagePredictionURL(URL.createObjectURL(blob));
+        });
+      });
+    });
+    setIsLoadingPrediction(false);
   }
 
   const retakePicture = () => {
     setCapturedImage(null);
     setPreviewVisible(false);
-    // handleStartCamera();
   };
 
   const switchCamera = () => {
-    if (cameraType === 'back') {
-      setCameraType('front');
-    } else {
-      setCameraType('back');
-    }
+    const cameraPostition = cameraType === 'back' ? 'front' : 'back';
+    setCameraType(cameraPostition);
   };
 
   return (
@@ -57,11 +91,13 @@ const App = () => {
           }}
         >
           {(previewVisible && capturedImage) ? (
-            <CameraPreview photo={capturedImage} savePhoto={savePhoto} retakePicture={retakePicture} />
-          ) : (
+            <CameraPreview photo={capturedImage} startPrediction={startPrediction} retakePicture={retakePicture} />
+          ) : imagePredictionURL ? (
+            <PredictionResults imagePredictionURL={imagePredictionURL} retakePicture={retakePicture} />
+          ) :
+          (
             <CameraView
-              type={cameraType}
-              flashMode={"off"}
+              facing={cameraType}
               style={{flex: 1}}
               ref={(r) => {
                 camera = r
@@ -88,9 +124,8 @@ const App = () => {
                     onPress={switchCamera}
                     style={{
                       marginTop: 20,
-                      borderRadius: '50%',
                       height: 25,
-                      width: 25
+                      width: 'fit-content'
                     }}
                   >
                     <Text
@@ -98,7 +133,7 @@ const App = () => {
                         fontSize: 20
                       }}
                     >
-                      {cameraType === 'front' ? '🤳' : '📷'}
+                      Flip Camera
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -175,16 +210,7 @@ const App = () => {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center'
-  }
-});
-
-const CameraPreview = ({photo, retakePicture, savePhoto}) => {
+const CameraPreview = ({photo, retakePicture, startPrediction}) => {
   return (
     <View
       style={{
@@ -195,7 +221,7 @@ const CameraPreview = ({photo, retakePicture, savePhoto}) => {
       }}
     >
       <ImageBackground
-        source={{uri: photo && photo.uri}}
+        source={{uri: photo?.uri}}
         style={{
           flex: 1
         }}
@@ -234,9 +260,9 @@ const CameraPreview = ({photo, retakePicture, savePhoto}) => {
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              onPress={savePhoto}
+              onPress={startPrediction}
               style={{
-                width: 130,
+                width: 'fit-content',
                 height: 40,
 
                 alignItems: 'center',
@@ -249,7 +275,7 @@ const CameraPreview = ({photo, retakePicture, savePhoto}) => {
                   fontSize: 20
                 }}
               >
-                save photo
+                Run prediction
               </Text>
             </TouchableOpacity>
           </View>
@@ -258,5 +284,71 @@ const CameraPreview = ({photo, retakePicture, savePhoto}) => {
     </View>
   );
 };
+
+const PredictionResults = ({imagePredictionURL, retakePicture}) => {
+  return (
+    <View
+      style={{
+        backgroundColor: 'transparent',
+        flex: 1,
+        width: '100%',
+        height: '100%'
+      }}
+    >
+      <ImageBackground
+        source={{uri: imagePredictionURL}}
+        style={{
+          flex: 1
+        }}
+      >
+        <View
+          style={{
+            flex: 1,
+            flexDirection: 'column',
+            padding: 15,
+            justifyContent: 'flex-end'
+          }}
+        >
+          <View
+            style={{
+              flexDirection: 'row',
+              justifyContent: 'space-between'
+            }}
+          >
+            <TouchableOpacity
+              onPress={retakePicture}
+              style={{
+                width: 130,
+                height: 40,
+
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: 4
+              }}
+            >
+              <Text
+                style={{
+                  color: '#fff',
+                  fontSize: 20
+                }}
+              >
+                Take another photo
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </ImageBackground>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center'
+  }
+});
 
 export default App;
